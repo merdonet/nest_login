@@ -2,6 +2,7 @@ import {
   Injectable,
   UnauthorizedException,
   ConflictException,
+  NotFoundException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
@@ -28,20 +29,20 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const userObject = {
-      email: user.email,
-      _id: user._id,
-      name: user.name,
-      roleId: user.roleId,
-    };
     const payload = {
       email: user.email,
       sub: user._id,
-      roleId: user.roleId,
+      roles: user.roles,
     };
     return {
       access_token: this.jwtService.sign(payload),
-      user: userObject,
+      user: {
+        email: user.email,
+        _id: user._id,
+        name: user.name,
+        roleId: user.roleId,
+        roles: user.roles,
+      },
     };
   }
 
@@ -77,5 +78,40 @@ export class AuthService {
       access_token: this.jwtService.sign(payload),
       user: userObject,
     };
+  }
+
+  async me(token: string) {
+    if (!token) {
+      throw new UnauthorizedException('No token provided');
+    }
+
+    try {
+      const decoded = this.jwtService.verify(token);
+      if (!decoded || !decoded.sub) {
+        throw new UnauthorizedException('Invalid token format');
+      }
+
+      const userProfile = await this.usersService.findById(decoded.sub);
+      if (!userProfile) {
+        throw new NotFoundException('User not found');
+      }
+
+      // Return same structure as login
+      return {
+        access_token: token,
+        user: {
+          email: userProfile.email,
+          _id: userProfile._id,
+          name: userProfile.name,
+          roleId: userProfile.roleId,
+          roles: userProfile.roles,
+        },
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new UnauthorizedException('Invalid token');
+    }
   }
 }
